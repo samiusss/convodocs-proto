@@ -26,45 +26,12 @@ import {
   Alert,
   ToggleButtonGroup,
   ToggleButton,
+  CircularProgress,
 } from "@mui/material"
 import { Save as SaveIcon, Check as CheckIcon, ArrowBack as ArrowBackIcon, Edit as EditIcon, Visibility as VisibilityIcon } from "@mui/icons-material"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-
-// Mock data for document content
-const mockDocument = {
-  id: "doc-1",
-  title: "API Documentation",
-  content: `# API Documentation
-
-## Introduction
-This document provides information about the RESTful API endpoints available in our service.
-
-## Authentication
-All API requests require authentication using an API key.
-
-## Endpoints
-
-### GET /api/users
-Returns a list of all users.
-
-### POST /api/users
-Creates a new user.
-
-### GET /api/users/{id}
-Returns details for a specific user.
-
-### PUT /api/users/{id}
-Updates a specific user.
-
-### DELETE /api/users/{id}
-Deletes a specific user.`,
-  createdAt: new Date().toISOString(),
-  team: "Engineering",
-  author: "John Doe",
-  tags: ["API", "Backend", "Documentation"],
-  status: "Draft",
-}
+import { documentsApi, teamsApi, type Document } from "@/frontend/src/services/api"
 
 // Mock data for available tags and teams
 const availableTags = ["API", "Frontend", "Backend", "Database", "Security", "UI/UX", "Testing", "Documentation"]
@@ -76,12 +43,14 @@ const DocumentEditor: React.FC = () => {
   const id = params?.id as string
 
   // State for document data
-  const [document, setDocument] = useState(mockDocument)
+  const [document, setDocument] = useState<Document | null>(null)
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [team, setTeam] = useState("")
   const [tags, setTags] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<"edit" | "preview">("edit")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   // UI state
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -91,21 +60,28 @@ const DocumentEditor: React.FC = () => {
 
   // Load document data
   useEffect(() => {
-    // In a real app, this would fetch the document from an API
-    // For now, we'll use our mock data
-    setTitle(mockDocument.title)
-    setContent(mockDocument.content)
-    setTeam(mockDocument.team)
-    setTags(mockDocument.tags)
+    const loadDocument = async () => {
+      try {
+        if (id) {
+          const doc = await documentsApi.getById(id)
+          setDocument(doc)
+          setTitle(doc.title)
+          setContent(doc.content)
+          setTeam(doc.team_id)
+          setTags(doc.tags)
+        }
+      } catch (error) {
+        console.error('Failed to load document:', error)
+        setSnackbarMessage("Failed to load document")
+        setSnackbarSeverity("error")
+        setSnackbarOpen(true)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadDocument()
   }, [id])
-
-  const handleTeamChange = (event: SelectChangeEvent) => {
-    setTeam(event.target.value)
-  }
-
-  const handleTagsChange = (_event: React.SyntheticEvent, newValue: string[]) => {
-    setTags(newValue)
-  }
 
   const handleViewModeChange = (
     _event: React.MouseEvent<HTMLElement>,
@@ -116,23 +92,49 @@ const DocumentEditor: React.FC = () => {
     }
   }
 
-  const handleSave = () => {
-    // In a real app, this would call an API to save the document
-    const updatedDocument = {
-      ...document,
-      title,
-      content,
-      team,
-      tags,
-      updatedAt: new Date().toISOString(),
+  const handleTeamChange = (event: SelectChangeEvent) => {
+    setTeam(event.target.value)
+  }
+
+  const handleTagsChange = (_event: React.SyntheticEvent, newValue: string[]) => {
+    setTags(newValue)
+  }
+
+  const handleSave = async () => {
+    try {
+      setSaving(true)
+      if (id && document) {
+        // Update existing document
+        const updatedDoc = await documentsApi.update(id, {
+          title,
+          content,
+          team_id: team,
+          tags,
+        })
+        setDocument(updatedDoc)
+      } else {
+        // Create new document
+        const newDoc = await documentsApi.create({
+          title,
+          content,
+          team_id: team,
+          author_id: "current-user-id", // This should come from auth context
+          tags,
+        })
+        router.push(`/document/${newDoc.id}`)
+      }
+
+      setSnackbarMessage("Document saved successfully")
+      setSnackbarSeverity("success")
+      setSnackbarOpen(true)
+    } catch (error) {
+      console.error('Failed to save document:', error)
+      setSnackbarMessage("Failed to save document")
+      setSnackbarSeverity("error")
+      setSnackbarOpen(true)
+    } finally {
+      setSaving(false)
     }
-
-    console.log("Saving document:", updatedDocument)
-
-    // Show success message
-    setSnackbarMessage("Document saved successfully")
-    setSnackbarSeverity("success")
-    setSnackbarOpen(true)
   }
 
   const handleConfirmOpen = () => {
@@ -143,34 +145,39 @@ const DocumentEditor: React.FC = () => {
     setConfirmDialogOpen(false)
   }
 
-  const handleConfirm = () => {
-    // In a real app, this would call an API to publish the document to Confluence
-    console.log("Publishing document to Confluence:", {
-      ...document,
-      title,
-      content,
-      team,
-      tags,
-      status: "Published",
-      publishedAt: new Date().toISOString(),
-    })
-
-    // Show success message
-    setSnackbarMessage("Document published to Confluence successfully")
-    setSnackbarSeverity("success")
-    setSnackbarOpen(true)
-
-    // Close dialog
-    setConfirmDialogOpen(false)
-
-    // Navigate back to dashboard after a short delay
-    setTimeout(() => {
-      router.push("/")
-    }, 1500)
+  const handleConfirm = async () => {
+    try {
+      setSaving(true)
+      if (id) {
+        await documentsApi.publish(id)
+        setSnackbarMessage("Document published successfully")
+        setSnackbarSeverity("success")
+        setSnackbarOpen(true)
+        setConfirmDialogOpen(false)
+        setTimeout(() => {
+          router.push("/")
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('Failed to publish document:', error)
+      setSnackbarMessage("Failed to publish document")
+      setSnackbarSeverity("error")
+      setSnackbarOpen(true)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleSnackbarClose = () => {
     setSnackbarOpen(false)
+  }
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    )
   }
 
   return (
@@ -197,10 +204,22 @@ const DocumentEditor: React.FC = () => {
             <VisibilityIcon sx={{ mr: 1 }} /> Preview
           </ToggleButton>
         </ToggleButtonGroup>
-        <Button variant="outlined" startIcon={<SaveIcon />} onClick={handleSave} sx={{ mr: 1 }}>
-          Save
+        <Button 
+          variant="outlined" 
+          startIcon={<SaveIcon />} 
+          onClick={handleSave} 
+          sx={{ mr: 1 }}
+          disabled={saving}
+        >
+          {saving ? 'Saving...' : 'Save'}
         </Button>
-        <Button variant="contained" color="primary" startIcon={<CheckIcon />} onClick={handleConfirmOpen}>
+        <Button 
+          variant="contained" 
+          color="primary" 
+          startIcon={<CheckIcon />} 
+          onClick={handleConfirmOpen}
+          disabled={saving}
+        >
           Confirm & Publish
         </Button>
       </Box>
@@ -292,11 +311,14 @@ const DocumentEditor: React.FC = () => {
             )}
           </Box>
 
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Created by {document.author} on {new Date(document.createdAt).toLocaleDateString()}
-            </Typography>
-          </Box>
+          {document && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Created by {document.author_name} on {new Date(document.created_at).toLocaleDateString()}
+                {document.updated_at && ` • Last updated on ${new Date(document.updated_at).toLocaleDateString()}`}
+              </Typography>
+            </Box>
+          )}
         </Stack>
       </Paper>
 
@@ -311,8 +333,13 @@ const DocumentEditor: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleConfirmClose}>Cancel</Button>
-          <Button onClick={handleConfirm} variant="contained" color="primary">
-            Confirm & Publish
+          <Button 
+            onClick={handleConfirm} 
+            variant="contained" 
+            color="primary"
+            disabled={saving}
+          >
+            {saving ? 'Publishing...' : 'Confirm & Publish'}
           </Button>
         </DialogActions>
       </Dialog>

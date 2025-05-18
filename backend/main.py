@@ -4,6 +4,14 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 import uuid
+import logging
+from fastapi.logger import logger
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 app = FastAPI(title="ConvoDocs API", description="API for ConvoDocs - Confluence Documentation Tool")
 
@@ -72,6 +80,23 @@ class Document(DocumentBase):
 
     class Config:
         orm_mode = True
+
+class SlackMessage(BaseModel):
+    user: str
+    text: str
+    timestamp: str
+
+class SlackThread(BaseModel):
+    channel: str
+    thread_ts: str
+    messages: List[SlackMessage]
+
+class SlackThreadToDoc(BaseModel):
+    title: str
+    team_id: str
+    author_id: str
+    threads: List[SlackThread]
+    tags: List[str] = []
 
 # Mock database
 db = {
@@ -197,6 +222,8 @@ async def delete_team_member(team_id: str, member_id: str):
 # Document endpoints
 @app.post("/documents/", response_model=Document, status_code=status.HTTP_201_CREATED)
 async def create_document(document: DocumentCreate):
+    logger.info(f"Attempting to create document with title: {document.title}")
+    
     # Check if team exists
     team_exists = False
     for team in db["teams"]:
@@ -205,7 +232,11 @@ async def create_document(document: DocumentCreate):
             break
     
     if not team_exists:
-        raise HTTPException(status_code=404, detail="Team not found")
+        logger.error(f"Team not found with ID: {document.team_id}")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Team with ID {document.team_id} not found"
+        )
     
     # Check if author exists
     author_exists = False
@@ -217,7 +248,11 @@ async def create_document(document: DocumentCreate):
             break
     
     if not author_exists:
-        raise HTTPException(status_code=404, detail="Author not found")
+        logger.error(f"Author not found with ID: {document.author_id}")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Author with ID {document.author_id} not found"
+        )
     
     document_id = str(uuid.uuid4())
     now = get_current_time()
@@ -237,26 +272,39 @@ async def create_document(document: DocumentCreate):
     }
     
     db["documents"].append(new_document)
+    logger.info(f"Successfully created document with ID: {document_id}")
     return new_document
 
 @app.get("/documents/", response_model=List[Document])
 async def get_documents(team_id: Optional[str] = None, status: Optional[str] = None):
+    logger.info(f"Fetching documents with filters - team_id: {team_id}, status: {status}")
     documents = db["documents"]
     
     if team_id:
         documents = [doc for doc in documents if doc["team_id"] == team_id]
+        logger.info(f"Filtered by team_id {team_id}: found {len(documents)} documents")
     
     if status:
         documents = [doc for doc in documents if doc["status"] == status]
+        logger.info(f"Filtered by status {status}: found {len(documents)} documents")
     
     return documents
 
 @app.get("/documents/{document_id}", response_model=Document)
 async def get_document(document_id: str):
+    logger.info(f"Attempting to fetch document with ID: {document_id}")
+    logger.debug(f"Current documents in DB: {[doc['id'] for doc in db['documents']]}")
+    
     for document in db["documents"]:
         if document["id"] == document_id:
+            logger.info(f"Found document: {document['title']}")
             return document
-    raise HTTPException(status_code=404, detail="Document not found")
+    
+    logger.error(f"Document not found with ID: {document_id}")
+    raise HTTPException(
+        status_code=404,
+        detail=f"Document with ID {document_id} not found. Available IDs: {[doc['id'] for doc in db['documents']]}"
+    )
 
 @app.put("/documents/{document_id}", response_model=Document)
 async def update_document(document_id: str, document_update: DocumentUpdate):
@@ -314,11 +362,79 @@ async def sync_with_confluence():
     # For this example, we'll just return a success message
     return {"message": "Sync with Confluence completed successfully"}
 
+# Slack endpoints
+@app.post("/slack/threads", response_model=Document, status_code=status.HTTP_201_CREATED)
+async def convert_threads_to_doc(thread_data: SlackThreadToDoc):
+    # Check if team exists
+    team_exists = False
+    for team in db["teams"]:
+        if team["id"] == thread_data.team_id:
+            team_exists = True
+            break
+    
+    if not team_exists:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Check if author exists
+    author_exists = False
+    author_name = ""
+    for member in db["members"]:
+        if member["id"] == thread_data.author_id:
+            author_exists = True
+            author_name = member["name"]
+            break
+    
+    if not author_exists:
+        raise HTTPException(status_code=404, detail="Author not found")
+    
+    # Convert threads to markdown content
+    content = f"# {thread_data.title}\n\n"
+    
+    for thread in thread_data.threads:
+        content += f"## Thread from {thread.channel}\n\n"
+        for message in thread.messages:
+            content += f"**{message.user}**:\n{message.text}\n\n"
+    
+    # Create new document
+    document_id = str(uuid.uuid4())
+    now = get_current_time()
+    
+    new_document = {
+        "id": document_id,
+        "title": thread_data.title,
+        "content": content,
+        "team_id": thread_data.team_id,
+        "author_id": thread_data.author_id,
+        "author_name": author_name,
+        "tags": thread_data.tags,
+        "status": "Draft",
+        "created_at": now,
+        "updated_at": now,
+        "published_at": None
+    }
+    
+    db["documents"].append(new_document)
+    return new_document
+
 # Root endpoint
 @app.get("/")
 async def root():
+    logger.info("Root endpoint accessed")
     return {
         "message": "Welcome to ConvoDocs API",
         "version": "1.0.0",
-        "documentation": "/docs"
+        "documentation": "/docs",
+        "database_status": {
+            "teams": len(db["teams"]),
+            "members": len(db["members"]),
+            "documents": len(db["documents"])
+        }
     }
+
+# Add middleware to log all requests
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"Incoming {request.method} request to {request.url}")
+    response = await call_next(request)
+    logger.info(f"Returning {response.status_code} response for {request.method} {request.url}")
+    return response
