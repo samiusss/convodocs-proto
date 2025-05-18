@@ -24,8 +24,12 @@ import {
   DialogTitle,
   Snackbar,
   Alert,
+  ToggleButtonGroup,
+  ToggleButton,
 } from "@mui/material"
-import { Save as SaveIcon, Check as CheckIcon, ArrowBack as ArrowBackIcon } from "@mui/icons-material"
+import { Save as SaveIcon, Check as CheckIcon, ArrowBack as ArrowBackIcon, Edit as EditIcon, Visibility as VisibilityIcon } from "@mui/icons-material"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 // Mock data for document content
 const mockDocument = {
@@ -77,6 +81,7 @@ const DocumentEditor: React.FC = () => {
   const [content, setContent] = useState("")
   const [team, setTeam] = useState("")
   const [tags, setTags] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit")
 
   // UI state
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -100,6 +105,15 @@ const DocumentEditor: React.FC = () => {
 
   const handleTagsChange = (_event: React.SyntheticEvent, newValue: string[]) => {
     setTags(newValue)
+  }
+
+  const handleViewModeChange = (
+    _event: React.MouseEvent<HTMLElement>,
+    newMode: "edit" | "preview" | null,
+  ) => {
+    if (newMode !== null) {
+      setViewMode(newMode)
+    }
   }
 
   const handleSave = () => {
@@ -168,6 +182,21 @@ const DocumentEditor: React.FC = () => {
         <Typography variant="h4" sx={{ flexGrow: 1 }}>
           Document Editor
         </Typography>
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={handleViewModeChange}
+          aria-label="view mode"
+          size="small"
+          sx={{ mr: 2 }}
+        >
+          <ToggleButton value="edit" aria-label="edit mode">
+            <EditIcon sx={{ mr: 1 }} /> Edit
+          </ToggleButton>
+          <ToggleButton value="preview" aria-label="preview mode">
+            <VisibilityIcon sx={{ mr: 1 }} /> Preview
+          </ToggleButton>
+        </ToggleButtonGroup>
         <Button variant="outlined" startIcon={<SaveIcon />} onClick={handleSave} sx={{ mr: 1 }}>
           Save
         </Button>
@@ -215,15 +244,52 @@ const DocumentEditor: React.FC = () => {
             <Typography variant="subtitle1" gutterBottom>
               Document Content
             </Typography>
-            <TextField
-              multiline
-              fullWidth
-              minRows={15}
-              maxRows={30}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              variant="outlined"
-            />
+            {viewMode === "edit" ? (
+              <TextField
+                multiline
+                fullWidth
+                minRows={15}
+                maxRows={30}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                variant="outlined"
+              />
+            ) : (
+              <Paper 
+                variant="outlined" 
+                sx={{ 
+                  p: 2, 
+                  minHeight: "300px",
+                  maxHeight: "600px",
+                  overflow: "auto",
+                  "& img": { maxWidth: "100%" },
+                  "& table": {
+                    borderCollapse: "collapse",
+                    width: "100%",
+                    "& th, & td": {
+                      border: "1px solid rgba(224, 224, 224, 1)",
+                      padding: "8px",
+                      textAlign: "left",
+                    },
+                  },
+                }}
+              >
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: (props) => <Typography variant="h1" gutterBottom {...props} />,
+                    h2: (props) => <Typography variant="h2" gutterBottom {...props} />,
+                    h3: (props) => <Typography variant="h3" gutterBottom {...props} />,
+                    h4: (props) => <Typography variant="h4" gutterBottom {...props} />,
+                    h5: (props) => <Typography variant="h5" gutterBottom {...props} />,
+                    h6: (props) => <Typography variant="h6" gutterBottom {...props} />,
+                    p: (props) => <Typography paragraph {...props} />,
+                  }}
+                >
+                  {content}
+                </ReactMarkdown>
+              </Paper>
+            )}
           </Box>
 
           <Box sx={{ mt: 2 }}>
