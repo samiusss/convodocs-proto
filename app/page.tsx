@@ -1,7 +1,12 @@
-import App from "../frontend/src/App"
+"use client"
 
-const Page = () => {
-  return <App />
+import Dashboard from "@/frontend/src/pages/Dashboard"
+import Layout from "@/frontend/src/components/Layout"
+
+export default function HomePage() {
+  return (
+    <Layout>
+      <Dashboard />
+    </Layout>
+  )
 }
-
-export default Page

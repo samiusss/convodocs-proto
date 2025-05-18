@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useRouter } from "next/navigation"
 import {
   Typography,
   Box,
@@ -37,7 +37,7 @@ const mockDocuments = Array.from({ length: 50 }, (_, index) => ({
 }))
 
 const Dashboard: React.FC = () => {
-  const navigate = useNavigate()
+  const router = useRouter()
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [searchTerm, setSearchTerm] = useState("")
@@ -54,7 +54,7 @@ const Dashboard: React.FC = () => {
   }
 
   const handleEditDocument = (documentId: string) => {
-    navigate(`/document/${documentId}`)
+    router.push(`/document/${documentId}`)
   }
 
   const handleConfirmDocument = (documentId: string) => {

@@ -1,20 +1,23 @@
 import type { Metadata } from 'next'
+import ThemeRegistry from './ThemeRegistry'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'ConvoDocs',
+  description: 'Document management system',
   generator: 'v0.dev',
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ThemeRegistry>{children}</ThemeRegistry>
+      </body>
     </html>
   )
 }

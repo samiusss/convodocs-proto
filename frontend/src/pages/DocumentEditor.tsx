@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useRouter, useParams } from "next/navigation"
 import {
   Box,
   Paper,
@@ -67,8 +67,9 @@ const availableTags = ["API", "Frontend", "Backend", "Database", "Security", "UI
 const availableTeams = ["Engineering", "Product", "Design", "Marketing", "Sales", "Support"]
 
 const DocumentEditor: React.FC = () => {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const params = useParams()
+  const router = useRouter()
+  const id = params?.id as string
 
   // State for document data
   const [document, setDocument] = useState(mockDocument)
@@ -150,7 +151,7 @@ const DocumentEditor: React.FC = () => {
 
     // Navigate back to dashboard after a short delay
     setTimeout(() => {
-      navigate("/")
+      router.push("/")
     }, 1500)
   }
 
@@ -161,7 +162,7 @@ const DocumentEditor: React.FC = () => {
   return (
     <Box>
       <Box sx={{ mb: 3, display: "flex", alignItems: "center", gap: 2 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate("/")} variant="outlined">
+        <Button startIcon={<ArrowBackIcon />} onClick={() => router.push("/")} variant="outlined">
           Back to Dashboard
         </Button>
         <Typography variant="h4" sx={{ flexGrow: 1 }}>
